@@ -18,16 +18,34 @@ public class Token
 
     public char After { get; init; } = Boundary;
 
-    public TokenRole Role { get; set; } = TokenRole.None;
+    public TokenRole Role { get; private set; } = TokenRole.None;
 
     /// <summary>Индекс парной лексемы в списке токенов; -1 - пары нет.</summary>
-    public int PairIndex { get; set; } = -1;
+    public int PairIndex { get; private set; } = -1;
 
     public bool IsMarkup => Kind != TokenKind.Text && Role != TokenRole.None;
 
     public bool IsDelimiter => Kind is TokenKind.Underscore or TokenKind.DoubleUnderscore;
 
-    public void Deactivate()
+    public bool IsBracket => Kind is TokenKind.LeftBracket or TokenKind.RightBracket;
+
+    public bool IsOpeningDelimiter => IsDelimiter && Role == TokenRole.Opening;
+
+    public bool IsClosingDelimiter => IsDelimiter && Role == TokenRole.Closing;
+
+    internal void OpenPairAt(int closeIndex)
+    {
+        Role = TokenRole.Opening;
+        PairIndex = closeIndex;
+    }
+
+    internal void ClosePairAt(int openIndex)
+    {
+        Role = TokenRole.Closing;
+        PairIndex = openIndex;
+    }
+
+    internal void Deactivate()
     {
         Role = TokenRole.None;
         PairIndex = -1;
