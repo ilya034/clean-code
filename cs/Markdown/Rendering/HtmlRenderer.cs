@@ -8,9 +8,12 @@ public class HtmlRenderer
 {
     public string Render(BlockKind kind, IReadOnlyList<INode> nodes)
     {
+        var tag = TagFor(kind);
         var output = new StringBuilder();
 
-        RenderContainer(TagFor(kind), nodes, output);
+        output.Append(HtmlTags.OpeningTag(tag));
+        RenderChildren(nodes, output);
+        output.Append(HtmlTags.ClosingTag(tag));
 
         return output.ToString();
     }
@@ -25,47 +28,70 @@ public class HtmlRenderer
         };
     }
 
-    private static void RenderNode(INode node, StringBuilder output)
+    private static void RenderChildren(IReadOnlyList<INode> children, StringBuilder output)
     {
-        switch (node)
+        var pending = new Stack<RenderStep>();
+
+        PushAll(pending, children);
+
+        while (pending.Count > 0)
         {
-            case TextNode text:
-                AppendEscaped(output, text.Text);
-                break;
-            case EmNode em:
-                RenderContainer(HtmlTags.Emphasis, em.Children, output);
-                break;
-            case StrongNode strong:
-                RenderContainer(HtmlTags.Strong, strong.Children, output);
-                break;
-            case LinkNode link:
-                RenderLink(link, output);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(node), node, "Неизвестный узел дерева.");
+            var step = pending.Pop();
+
+            if (step.Literal is { } literal)
+            {
+                output.Append(literal);
+                continue;
+            }
+
+            switch (step.Node)
+            {
+                case TextNode text:
+                    AppendEscaped(output, text.Text);
+                    break;
+                case EmNode em:
+                    PushContainer(pending, HtmlTags.Emphasis, em.Children);
+                    break;
+                case StrongNode strong:
+                    PushContainer(pending, HtmlTags.Strong, strong.Children);
+                    break;
+                case LinkNode link:
+                    PushLink(pending, link);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(children), step.Node, "Неизвестный узел дерева.");
+            }
         }
     }
 
-    private static void RenderContainer(string tag, IReadOnlyList<INode> children, StringBuilder output)
+    private static void PushContainer(Stack<RenderStep> pending, string tag, IReadOnlyList<INode> children)
     {
-        output.Append(HtmlTags.TagStart).Append(tag).Append(HtmlTags.TagEnd);
-        RenderChildren(children, output);
-        output.Append(HtmlTags.ClosingTagPrefix).Append(tag).Append(HtmlTags.TagEnd);
+        pending.Push(RenderStep.ForLiteral(HtmlTags.ClosingTag(tag)));
+        PushAll(pending, children);
+        pending.Push(RenderStep.ForLiteral(HtmlTags.OpeningTag(tag)));
     }
 
-    private static void RenderLink(LinkNode link, StringBuilder output)
+    private static void PushLink(Stack<RenderStep> pending, LinkNode link)
     {
-        output.Append(HtmlTags.LinkOpen);
-        AppendEscaped(output, link.Url, escapeQuotes: true);
+        pending.Push(RenderStep.ForLiteral(HtmlTags.LinkClose));
+        PushAll(pending, link.Children);
+        pending.Push(RenderStep.ForLiteral(LinkOpening(link.Url)));
+    }
+
+    private static void PushAll(Stack<RenderStep> pending, IReadOnlyList<INode> nodes)
+    {
+        for (var index = nodes.Count - 1; index >= 0; index--)
+            pending.Push(RenderStep.ForNode(nodes[index]));
+    }
+
+    private static string LinkOpening(string url)
+    {
+        var output = new StringBuilder(HtmlTags.LinkOpen);
+
+        AppendEscaped(output, url, escapeQuotes: true);
         output.Append(HtmlTags.LinkOpenEnd);
-        RenderChildren(link.Children, output);
-        output.Append(HtmlTags.LinkClose);
-    }
 
-    private static void RenderChildren(IReadOnlyList<INode> children, StringBuilder output)
-    {
-        foreach (var child in children)
-            RenderNode(child, output);
+        return output.ToString();
     }
 
     private static void AppendEscaped(StringBuilder output, string value, bool escapeQuotes = false)
@@ -89,5 +115,18 @@ public class HtmlRenderer
                     output.Append(symbol);
                     break;
             }
+    }
+
+    private readonly record struct RenderStep(INode? Node, string? Literal)
+    {
+        public static RenderStep ForNode(INode node)
+        {
+            return new RenderStep(node, null);
+        }
+
+        public static RenderStep ForLiteral(string literal)
+        {
+            return new RenderStep(null, literal);
+        }
     }
 }

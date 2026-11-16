@@ -38,4 +38,14 @@ public static class HtmlTags
     public const string GreaterThan = "&gt;";
 
     public const string Quote = "&quot;";
+
+    public static string OpeningTag(string tag)
+    {
+        return TagStart + tag + TagEnd;
+    }
+
+    public static string ClosingTag(string tag)
+    {
+        return ClosingTagPrefix + tag + TagEnd;
+    }
 }
