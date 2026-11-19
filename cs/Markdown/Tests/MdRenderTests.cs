@@ -173,7 +173,12 @@ public class MdRenderTests
         ("[a _b [c_ d](u) e](v)", "<p><a href=\"v\">a <em>b [c</em> d](u) e</a></p>"),
         ("_a __b [c_ d__ e](u)", "<p>_a __b <a href=\"u\">c_ d__ e</a></p>"),
         ("[x _y](u) a [b_ c](v)", "<p><a href=\"u\">x _y</a> a <a href=\"v\">b_ c</a></p>"),
-        ("_a __b [c__ d](u) e_", "<p><em>a __b <a href=\"u\">c__ d</a> e</em></p>"));
+        ("_a __b [c__ d](u) e_", "<p><em>a __b <a href=\"u\">c__ d</a> e</em></p>"),
+        ("[a _b __c [d_ e](u) f__ _g](v) h_", "<p>[a _b __c <a href=\"u\">d_ e</a> f__ <em>g](v) h</em></p>"),
+        ("_x __y [a z__ _b](u)c_de_ f_", "<p><em>x __y <a href=\"u\">a z__ _b</a>c<em>de</em> f</em></p>"),
+        ("_w __y w_ [a z__ _b](u) __c__ b_", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <strong>c</strong> b_</p>"),
+        ("_w __y w_ [a z__ _b](u) __c b_ c__", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <strong>c b_ c</strong></p>"),
+        ("_w __y w_ [a z__ _b](u) [c d_ e](v)", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <a href=\"v\">c d_ e</a></p>"));
 
     public static IEnumerable<TestCaseData> Headers => Cases(
         ("# Заголовок", "<h1>Заголовок</h1>"),

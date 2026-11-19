@@ -82,7 +82,8 @@ public class MdPerformanceTests
     public static IEnumerable<TestCaseData> PerformanceFragments => Fragments(
         "# Заголовок __с _разными_ символами__ и [ссылкой](url)\n\n",
         "_это ра_ботает так_ __пересечение _двойных__ и одинарных_ [a _b](u) c_ ",
-        "текст](без закрытия скобки ](еще ](и еще _непарный __подчерк ");
+        "текст](без закрытия скобки ](еще ](и еще _непарный __подчерк ",
+        "_w __y w_ [a z__ _b](u) __c__ b_ ");
 
     private static IEnumerable<TestCaseData> Fragments(params string[] fragments)
     {
