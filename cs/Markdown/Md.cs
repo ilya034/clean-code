@@ -28,8 +28,8 @@ public class Md
         foreach (var block in blocks)
         {
             var tokens = tokenizer.Tokenize(block.Content);
-            tagPairer.Pair(tokens);
-            var tree = treeBuilder.Build(tokens);
+            var pairs = tagPairer.Pair(tokens);
+            var tree = treeBuilder.Build(tokens, pairs);
             htmlBlocks.Add(renderer.Render(block.Kind, tree));
         }
 

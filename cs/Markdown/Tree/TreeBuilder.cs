@@ -1,3 +1,4 @@
+using Markdown.Pairing;
 using Markdown.Syntax;
 using Markdown.Tokens;
 
@@ -5,7 +6,7 @@ namespace Markdown.Tree;
 
 public class TreeBuilder
 {
-    public IReadOnlyList<INode> Build(IReadOnlyList<Token> tokens)
+    public IReadOnlyList<INode> Build(IReadOnlyList<Token> tokens, TagPairs pairs)
     {
         var root = new List<INode>();
         var frames = new Stack<Frame>();
@@ -24,10 +25,9 @@ public class TreeBuilder
 
             var token = tokens[frame.Index];
 
-            if (token.IsMarkup && token.Role == TokenRole.Opening)
+            if (pairs.TryGetClosingIndex(frame.Index, out var closeIndex))
             {
                 var openerIndex = frame.Index;
-                var closeIndex = token.PairIndex;
 
                 frame.Index = GetNextIndexAfter(token, closeIndex);
                 frames.Push(Frame.ForOpener(token, openerIndex, closeIndex, new List<INode>()));

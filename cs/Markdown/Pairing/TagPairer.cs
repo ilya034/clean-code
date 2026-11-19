@@ -4,361 +4,117 @@ namespace Markdown.Pairing;
 
 public class TagPairer
 {
-    public void Pair(IReadOnlyList<Token> tokens)
+    public TagPairs Pair(IReadOnlyList<Token> tokens)
     {
-        var whitespacePrefix = BuildWhitespacePrefixSums(tokens);
+        var whitespace = new WhitespaceIndex(tokens);
+        var blockedDelimiters = new bool[tokens.Count];
 
-        PairTokens(tokens, whitespacePrefix);
-
-        var hasCrossings = DeactivateCrossingDelimiters(tokens);
-        var hasStrongInsideEm = DeactivateStrongInsideEm(tokens);
-
-        if (hasCrossings || hasStrongInsideEm)
-            RepairLinks(tokens);
-    }
-
-    /// <summary>
-    ///     Скобки ссылки размечаются заново по уже действующим парам подчерков:
-    ///     пара, которая оказалась невалидной, не должна отменять ссылку.
-    /// </summary>
-    private static void RepairLinks(IReadOnlyList<Token> tokens)
-    {
-        ResetLinks(tokens);
-        PairLinkBrackets(tokens);
-    }
-
-    private static void PairTokens(IReadOnlyList<Token> tokens, int[] whitespacePrefix)
-    {
-        var delimiterOpeners = new Dictionary<TokenKind, Stack<int>>
+        while (true)
         {
-            [TokenKind.Underscore] = new(),
-            [TokenKind.DoubleUnderscore] = new()
-        };
-        var linkOpeners = new Stack<LinkOpener>();
+            var pairs = RunPairingPass(tokens, whitespace, blockedDelimiters);
+            var conflicts = ConflictResolver.Resolve(tokens, pairs);
+
+            if (conflicts.Count == 0)
+                return pairs;
+
+            var revivedLinks = FindRevivedLinks(tokens, pairs);
+            if (revivedLinks.Count == 0)
+                return pairs;
+
+            BlockConflictsBlockingLinks(tokens.Count, conflicts, revivedLinks, blockedDelimiters);
+        }
+    }
+
+    private static TagPairs RunPairingPass(
+        IReadOnlyList<Token> tokens,
+        WhitespaceIndex whitespace,
+        bool[] blockedDelimiters)
+    {
+        var pairs = new TagPairs(tokens.Count);
+        var delimiters = new DelimiterPairing(tokens, whitespace, pairs);
+        var links = new LinkPairing(tokens);
 
         for (var index = 0; index < tokens.Count; index++)
         {
-            var token = tokens[index];
-
-            if (token.IsDelimiter)
+            if (tokens[index].IsDelimiter)
             {
-                ProcessDelimiter(tokens, index, delimiterOpeners[token.Kind], linkOpeners, whitespacePrefix);
+                if (blockedDelimiters[index])
+                    continue;
+
+                if (delimiters.PairAt(index) is { } closedOpener)
+                    links.NoteClosedDelimiter(closedOpener);
+
                 continue;
             }
 
-            if (TryHandleLinkBracket(tokens, index, linkOpeners, out var linkOpenIndex) && linkOpenIndex >= 0)
-                DiscardDelimiterOpenersAfter(delimiterOpeners, linkOpenIndex);
+            if (links.HandleBracket(index) is { } link)
+            {
+                pairs.Link(link.OpenIndex, link.CloseIndex);
+                delimiters.ForgetOpenersAfter(link.OpenIndex);
+            }
         }
+
+        return pairs;
     }
 
-    private static void ProcessDelimiter(
-        IReadOnlyList<Token> tokens,
-        int index,
-        Stack<int> sameKindOpeners,
-        Stack<LinkOpener> linkOpeners,
-        int[] whitespacePrefix)
+    private static List<Link> FindRevivedLinks(IReadOnlyList<Token> tokens, TagPairs pairs)
     {
-        var token = tokens[index];
+        var rescannedLinks = LinkPairing.FindAll(tokens, pairs);
+        var revived = new List<Link>();
 
-        if (token.CanClose() && TryCloseDelimiter(tokens, sameKindOpeners, index, whitespacePrefix))
+        foreach (var link in rescannedLinks)
         {
-            if (token.Role == TokenRole.Closing)
-                RecordClosedDelimiter(linkOpeners, token.PairIndex);
-
-            return;
+            var alreadyPaired = pairs.TryGetClosingIndex(link.OpenIndex, out var closeIndex)
+                                && closeIndex == link.CloseIndex;
+            if (!alreadyPaired)
+                revived.Add(link);
         }
 
-        if (token.CanOpen())
-            sameKindOpeners.Push(index);
+        return revived;
     }
 
-    private static bool TryCloseDelimiter(
-        IReadOnlyList<Token> tokens,
-        Stack<int> openers,
-        int closeIndex,
-        int[] whitespacePrefix)
+    private static void BlockConflictsBlockingLinks(
+        int tokenCount,
+        IReadOnlyList<DroppedConflict> conflicts,
+        IReadOnlyList<Link> revivedLinks,
+        bool[] blockedDelimiters)
     {
-        DiscardUnclosableOpeners(tokens, openers, closeIndex, whitespacePrefix);
+        var revivedLinkOpenAt = BuildRevivedLinkMap(tokenCount, revivedLinks);
 
-        if (openers.Count == 0)
-            return false;
-
-        var openIndex = openers.Peek();
-
-        if (closeIndex == openIndex + 1)
+        foreach (var conflict in conflicts)
         {
-            openers.Pop();
-            return true;
+            if (!BlocksAnyRevivedLink(conflict, revivedLinkOpenAt))
+                continue;
+
+            foreach (var pair in conflict.Pairs)
+            {
+                blockedDelimiters[pair.OpenIndex] = true;
+                blockedDelimiters[pair.CloseIndex] = true;
+            }
         }
-
-        if (!IsValidPair(tokens, openIndex, closeIndex, whitespacePrefix))
-            return false;
-
-        openers.Pop();
-        SetPair(tokens, openIndex, closeIndex);
-        return true;
     }
 
-    private static void DiscardUnclosableOpeners(
-        IReadOnlyList<Token> tokens,
-        Stack<int> openers,
-        int closeIndex,
-        int[] whitespacePrefix)
+    private static int[] BuildRevivedLinkMap(int tokenCount, IReadOnlyList<Link> revivedLinks)
     {
-        while (openers.Count > 0)
+        var linkOpenAt = new int[tokenCount];
+        Array.Fill(linkOpenAt, -1);
+
+        foreach (var link in revivedLinks)
+            for (var index = link.OpenIndex + 1; index < link.CloseIndex; index++)
+                linkOpenAt[index] = link.OpenIndex;
+
+        return linkOpenAt;
+    }
+
+    private static bool BlocksAnyRevivedLink(DroppedConflict conflict, int[] revivedLinkOpenAt)
+    {
+        foreach (var pair in conflict.Pairs)
         {
-            var openIndex = openers.Peek();
-
-            if (!IsValidPair(tokens, openIndex, closeIndex, whitespacePrefix, assumeCloserOutsideWord: true))
-                openers.Pop();
-            else
-                break;
-        }
-    }
-
-    private static bool IsValidPair(
-        IReadOnlyList<Token> tokens,
-        int openIndex,
-        int closeIndex,
-        int[] whitespacePrefix,
-        bool assumeCloserOutsideWord = false)
-    {
-        var hasWhitespace = HasWhitespaceBetween(openIndex, closeIndex, whitespacePrefix);
-        if (!hasWhitespace)
-            return true;
-
-        if (tokens[openIndex].IsInsideWord())
-            return false;
-
-        return assumeCloserOutsideWord || !tokens[closeIndex].IsInsideWord();
-    }
-
-    private static bool HasWhitespaceBetween(int openIndex, int closeIndex, int[] whitespacePrefix)
-    {
-        return whitespacePrefix[closeIndex] - whitespacePrefix[openIndex + 1] > 0;
-    }
-
-    private static int[] BuildWhitespacePrefixSums(IReadOnlyList<Token> tokens)
-    {
-        var prefix = new int[tokens.Count + 1];
-
-        for (var index = 0; index < tokens.Count; index++)
-        {
-            var hasWhitespace = ContainsWhitespace(tokens[index].Value);
-            prefix[index + 1] = prefix[index] + (hasWhitespace ? 1 : 0);
-        }
-
-        return prefix;
-    }
-
-    private static bool ContainsWhitespace(string text)
-    {
-        foreach (var ch in text)
-            if (char.IsWhiteSpace(ch))
+            var linkOpen = revivedLinkOpenAt[pair.CloseIndex];
+            if (linkOpen >= 0 && pair.OpenIndex < linkOpen)
                 return true;
-
-        return false;
-    }
-
-    private static void PairLinkBrackets(IReadOnlyList<Token> tokens)
-    {
-        var linkOpeners = new Stack<LinkOpener>();
-
-        for (var index = 0; index < tokens.Count; index++)
-        {
-            var token = tokens[index];
-
-            if (token.IsDelimiter && token.Role == TokenRole.Closing)
-            {
-                RecordClosedDelimiter(linkOpeners, token.PairIndex);
-                continue;
-            }
-
-            if (TryHandleLinkBracket(tokens, index, linkOpeners, out var openIndex) && openIndex >= 0)
-                DeactivateDelimitersCrossingLink(tokens, openIndex, index);
-        }
-    }
-
-    private static bool TryHandleLinkBracket(
-        IReadOnlyList<Token> tokens,
-        int index,
-        Stack<LinkOpener> linkOpeners,
-        out int linkOpenIndex)
-    {
-        linkOpenIndex = -1;
-        var token = tokens[index];
-
-        if (token.Kind == TokenKind.LeftBracket)
-        {
-            linkOpeners.Push(new LinkOpener(index, index));
-            return true;
-        }
-
-        if (token.Kind == TokenKind.RightBracket)
-        {
-            TryCloseLink(tokens, index, linkOpeners, out linkOpenIndex);
-            return true;
         }
 
         return false;
     }
-
-    private static bool TryCloseLink(
-        IReadOnlyList<Token> tokens,
-        int closeIndex,
-        Stack<LinkOpener> linkOpeners,
-        out int openIndex)
-    {
-        openIndex = -1;
-        if (linkOpeners.Count == 0)
-            return false;
-
-        var (candidateOpenIndex, minDelimOpen) = linkOpeners.Pop();
-        RecordClosedDelimiter(linkOpeners, minDelimOpen);
-
-        var delimiterOpenedBeforeLink = minDelimOpen < candidateOpenIndex;
-        var isLinkTextEmpty = closeIndex == candidateOpenIndex + 1;
-
-        if (delimiterOpenedBeforeLink || isLinkTextEmpty || !HasUrlAfter(tokens, closeIndex))
-            return false;
-
-        openIndex = candidateOpenIndex;
-        SetPair(tokens, openIndex, closeIndex);
-
-        // Вложенные ссылки запрещены спецификацией: срабатывает только внутренняя ссылка
-        linkOpeners.Clear();
-        return true;
-    }
-
-    private static void RecordClosedDelimiter(
-        Stack<LinkOpener> linkOpeners,
-        int delimiterOpenIndex)
-    {
-        if (linkOpeners.Count == 0)
-            return;
-
-        var top = linkOpeners.Pop();
-        linkOpeners.Push(new LinkOpener(top.OpenIndex, Math.Min(top.MinDelimiterOpenIndex, delimiterOpenIndex)));
-    }
-
-    private static void DiscardDelimiterOpenersAfter(
-        Dictionary<TokenKind, Stack<int>> delimiterOpeners,
-        int linkOpenIndex)
-    {
-        foreach (var stack in delimiterOpeners.Values)
-            while (stack.Count > 0 && stack.Peek() > linkOpenIndex)
-                stack.Pop();
-    }
-
-    private static void DeactivateDelimitersCrossingLink(IReadOnlyList<Token> tokens, int openIndex, int closeIndex)
-    {
-        for (var index = openIndex + 1; index < closeIndex; index++)
-        {
-            var token = tokens[index];
-            if (token.IsDelimiter && token.Role == TokenRole.Opening && token.PairIndex > closeIndex)
-                DeactivatePair(tokens, token);
-        }
-    }
-
-    private static void ResetLinks(IReadOnlyList<Token> tokens)
-    {
-        foreach (var token in tokens)
-            if (token.Kind is TokenKind.LeftBracket or TokenKind.RightBracket)
-                token.Deactivate();
-    }
-
-    private static bool HasUrlAfter(IReadOnlyList<Token> tokens, int closeIndex)
-    {
-        return closeIndex + 1 < tokens.Count && tokens[closeIndex + 1].Kind == TokenKind.LinkUrl;
-    }
-
-    private static bool DeactivateCrossingDelimiters(IReadOnlyList<Token> tokens)
-    {
-        var openers = new Stack<int>();
-        var hasCrossings = false;
-
-        for (var index = 0; index < tokens.Count; index++)
-        {
-            var token = tokens[index];
-            if (!token.IsDelimiter)
-                continue;
-
-            if (token.Role == TokenRole.Opening)
-            {
-                openers.Push(index);
-                continue;
-            }
-
-            if (token.Role != TokenRole.Closing)
-                continue;
-
-            var openIndex = token.PairIndex;
-            var isCrossed = false;
-
-            while (openers.Peek() != openIndex)
-            {
-                var innerIndex = openers.Pop();
-                isCrossed = true;
-                DeactivatePair(tokens, innerIndex);
-            }
-
-            openers.Pop();
-
-            if (isCrossed)
-            {
-                DeactivatePair(tokens, openIndex);
-                hasCrossings = true;
-            }
-        }
-
-        return hasCrossings;
-    }
-
-    private static bool DeactivateStrongInsideEm(IReadOnlyList<Token> tokens)
-    {
-        var emDepth = 0;
-        var hasDeactivated = false;
-
-        foreach (var token in tokens)
-        {
-            if (token.Kind == TokenKind.Underscore)
-            {
-                if (token.Role == TokenRole.Opening)
-                    emDepth++;
-                else if (token.Role == TokenRole.Closing)
-                    emDepth--;
-
-                continue;
-            }
-
-            if (token.Kind == TokenKind.DoubleUnderscore && token.Role == TokenRole.Opening && emDepth > 0)
-            {
-                DeactivatePair(tokens, token);
-                hasDeactivated = true;
-            }
-        }
-
-        return hasDeactivated;
-    }
-
-    private static void SetPair(IReadOnlyList<Token> tokens, int openIndex, int closeIndex)
-    {
-        tokens[openIndex].Role = TokenRole.Opening;
-        tokens[openIndex].PairIndex = closeIndex;
-        tokens[closeIndex].Role = TokenRole.Closing;
-        tokens[closeIndex].PairIndex = openIndex;
-    }
-
-    private static void DeactivatePair(IReadOnlyList<Token> tokens, int openIndex)
-    {
-        DeactivatePair(tokens, tokens[openIndex]);
-    }
-
-    private static void DeactivatePair(IReadOnlyList<Token> tokens, Token opener)
-    {
-        tokens[opener.PairIndex].Deactivate();
-        opener.Deactivate();
-    }
-
-    private readonly record struct LinkOpener(int OpenIndex, int MinDelimiterOpenIndex);
 }
