@@ -5,10 +5,10 @@ namespace Markdown.Pairing;
 public class Openers
 {
     private const int NoOpener = -1;
-
-    private readonly int[] previousVisible;
     private readonly bool[] doomed;
     private readonly Stack<int> emphasis = new();
+
+    private readonly int[] previousVisible;
     private readonly Stack<int> strong = new();
     private int emphasisTop = NoOpener;
     private int strongTop = NoOpener;

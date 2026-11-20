@@ -4,11 +4,11 @@ namespace Markdown.Pairing;
 
 public class DelimiterPairing
 {
-    private readonly IReadOnlyList<Token> tokens;
-    private readonly WhitespaceIndex whitespace;
-    private readonly TagPairs pairs;
     private readonly PairingPrediction forecast;
     private readonly Openers openers;
+    private readonly TagPairs pairs;
+    private readonly IReadOnlyList<Token> tokens;
+    private readonly WhitespaceIndex whitespace;
 
     public DelimiterPairing(IReadOnlyList<Token> tokens, WhitespaceIndex whitespace, TagPairs pairs)
     {

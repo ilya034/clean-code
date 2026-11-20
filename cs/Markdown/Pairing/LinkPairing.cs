@@ -4,8 +4,8 @@ namespace Markdown.Pairing;
 
 public class LinkPairing
 {
-    private readonly IReadOnlyList<Token> tokens;
     private readonly Stack<LinkOpener> openers = new();
+    private readonly IReadOnlyList<Token> tokens;
 
     public LinkPairing(IReadOnlyList<Token> tokens)
     {

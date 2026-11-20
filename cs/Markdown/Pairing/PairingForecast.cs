@@ -12,11 +12,11 @@ public sealed class PairingPrediction
     {
         this.closers = closers;
     }
-    
+
     public static PairingPrediction Build(IReadOnlyList<Token> tokens, WhitespaceIndex whitespace)
     {
-        var closers = Find(tokens, whitespace, links: false);
-        var optimistic = Find(tokens, whitespace, links: true);
+        var closers = Find(tokens, whitespace, false);
+        var optimistic = Find(tokens, whitespace, true);
 
         for (var index = 0; index < closers.Length; index++)
             closers[index] = Math.Max(closers[index], optimistic[index]);

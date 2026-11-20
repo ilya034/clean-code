@@ -88,7 +88,7 @@ public class HtmlRenderer
     {
         var output = new StringBuilder(HtmlTags.LinkOpen);
 
-        AppendEscaped(output, url, escapeQuotes: true);
+        AppendEscaped(output, url, true);
         output.Append(HtmlTags.LinkOpenEnd);
 
         return output.ToString();

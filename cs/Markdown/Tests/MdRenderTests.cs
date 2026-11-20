@@ -114,8 +114,6 @@ public class MdRenderTests
         return markdown.Replace("\n", "\\n");
     }
 
-    #region Данные кейсов: пары «разметка → ожидаемый HTML»
-
     public static IEnumerable<TestCaseData> EmphasisInTags => Cases(
         ("_текст_", "<p><em>текст</em></p>"),
         ("__текст__", "<p><strong>текст</strong></p>"),
@@ -178,7 +176,8 @@ public class MdRenderTests
         ("_x __y [a z__ _b](u)c_de_ f_", "<p><em>x __y <a href=\"u\">a z__ _b</a>c<em>de</em> f</em></p>"),
         ("_w __y w_ [a z__ _b](u) __c__ b_", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <strong>c</strong> b_</p>"),
         ("_w __y w_ [a z__ _b](u) __c b_ c__", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <strong>c b_ c</strong></p>"),
-        ("_w __y w_ [a z__ _b](u) [c d_ e](v)", "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <a href=\"v\">c d_ e</a></p>"));
+        ("_w __y w_ [a z__ _b](u) [c d_ e](v)",
+            "<p>_w __y w_ <a href=\"u\">a z__ _b</a> <a href=\"v\">c d_ e</a></p>"));
 
     public static IEnumerable<TestCaseData> Headers => Cases(
         ("# Заголовок", "<h1>Заголовок</h1>"),
@@ -240,6 +239,4 @@ public class MdRenderTests
     {
         return $"\"{markdown.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\"", "'")}\"";
     }
-
-    #endregion
 }
