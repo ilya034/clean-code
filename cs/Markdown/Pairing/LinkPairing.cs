@@ -31,26 +31,6 @@ public class LinkPairing
         opener.MinDelimiterOpenIndex = Math.Min(opener.MinDelimiterOpenIndex, delimiterOpenIndex);
     }
 
-    public static List<Link> FindAll(IReadOnlyList<Token> tokens, TagPairs pairs)
-    {
-        var matcher = new LinkPairing(tokens);
-        var links = new List<Link>();
-
-        for (var index = 0; index < tokens.Count; index++)
-        {
-            if (tokens[index].IsDelimiter && pairs.IsClosing(index))
-            {
-                matcher.NoteClosedDelimiter(pairs.GetPartner(index));
-                continue;
-            }
-
-            if (matcher.HandleBracket(index) is { } link)
-                links.Add(link);
-        }
-
-        return links;
-    }
-
     private Link? Open(int index)
     {
         openers.Push(new LinkOpener(index));

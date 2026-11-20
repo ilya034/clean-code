@@ -34,6 +34,32 @@ public static class PairingRules
         return char.IsDigit(token.Before) || char.IsDigit(token.After);
     }
 
+    public static bool IsExhausted(
+        IReadOnlyList<Token> tokens,
+        WhitespaceIndex whitespace,
+        int openIndex,
+        int closeIndex)
+    {
+        return whitespace.HasWhitespaceBetween(openIndex, closeIndex) && tokens[openIndex].IsInsideWord();
+    }
+
+    public static bool CanPair(
+        IReadOnlyList<Token> tokens,
+        WhitespaceIndex whitespace,
+        int openIndex,
+        int closeIndex)
+    {
+        if (!whitespace.HasWhitespaceBetween(openIndex, closeIndex))
+            return true;
+
+        return !tokens[openIndex].IsInsideWord() && !tokens[closeIndex].IsInsideWord();
+    }
+
+    public static TokenKind Other(TokenKind kind)
+    {
+        return kind == TokenKind.Underscore ? TokenKind.DoubleUnderscore : TokenKind.Underscore;
+    }
+
     private static bool IsBoundaryOrWhiteSpace(char symbol)
     {
         return symbol == Token.Boundary || char.IsWhiteSpace(symbol);

@@ -17,16 +17,6 @@ public class TagPairs
         return closeIndex > openIndex;
     }
 
-    public bool IsOpening(int index)
-    {
-        return partners[index] > index;
-    }
-
-    public bool IsClosing(int index)
-    {
-        return partners[index] >= 0 && partners[index] < index;
-    }
-
     public int GetPartner(int index)
     {
         return partners[index];
@@ -36,15 +26,5 @@ public class TagPairs
     {
         partners[openIndex] = closeIndex;
         partners[closeIndex] = openIndex;
-    }
-
-    public void Drop(int openIndex)
-    {
-        var closeIndex = partners[openIndex];
-        if (closeIndex < 0)
-            return;
-
-        partners[openIndex] = NoPair;
-        partners[closeIndex] = NoPair;
     }
 }

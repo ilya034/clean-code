@@ -7,93 +7,84 @@ public class DelimiterPairing
     private readonly IReadOnlyList<Token> tokens;
     private readonly WhitespaceIndex whitespace;
     private readonly TagPairs pairs;
-    private readonly OpenerStacks openers = new();
+    private readonly PairingPrediction forecast;
+    private readonly Openers openers;
 
     public DelimiterPairing(IReadOnlyList<Token> tokens, WhitespaceIndex whitespace, TagPairs pairs)
     {
         this.tokens = tokens;
         this.whitespace = whitespace;
         this.pairs = pairs;
+        forecast = PairingPrediction.Build(tokens, whitespace);
+        openers = new Openers(tokens.Count);
     }
 
     public int? PairAt(int index)
     {
         var token = tokens[index];
-        var sameKind = openers.For(token.Kind);
 
         if (token.CanClose())
         {
-            ForgetExhausted(sameKind, index);
+            ForgetExhausted(token.Kind, index);
 
-            if (sameKind.Count > 0)
+            if (openers.Count(token.Kind) > 0)
             {
-                var openIndex = sameKind.Peek();
+                var openIndex = openers.Peek(token.Kind);
 
                 if (index == openIndex + 1)
                 {
-                    sameKind.Pop();
+                    openers.Pop(token.Kind);
                     return null;
                 }
 
                 if (CanPair(openIndex, index))
                 {
-                    sameKind.Pop();
-                    pairs.Link(openIndex, index);
-                    return openIndex;
+                    openers.Pop(token.Kind);
+                    return Link(token.Kind, openIndex, index);
                 }
             }
         }
 
         if (token.CanOpen())
-            sameKind.Push(index);
+            openers.Push(token.Kind, index, forecast.WillClose(index));
 
         return null;
     }
 
     public void ForgetOpenersAfter(int linkOpenIndex)
     {
-        openers.ForgetAfter(linkOpenIndex);
+        openers.ForgetAbove(TokenKind.Underscore, linkOpenIndex);
+        openers.ForgetAbove(TokenKind.DoubleUnderscore, linkOpenIndex);
     }
 
-    private void ForgetExhausted(Stack<int> sameKind, int closeIndex)
+    private int? Link(TokenKind kind, int openIndex, int closeIndex)
     {
-        while (sameKind.Count > 0 && IsExhausted(sameKind.Peek(), closeIndex))
-            sameKind.Pop();
+        if (openers.IsDoomed(openIndex))
+            return null;
+
+        if (openers.DoomVisibleAbove(PairingRules.Other(kind), openIndex))
+            return null;
+
+        if (kind == TokenKind.DoubleUnderscore && openers.HasVisible(TokenKind.Underscore))
+            return null;
+
+        pairs.Link(openIndex, closeIndex);
+        return openIndex;
+    }
+
+    private void ForgetExhausted(TokenKind kind, int closeIndex)
+    {
+        while (openers.Count(kind) > 0 && IsExhausted(openers.Peek(kind), closeIndex))
+            openers.Pop(kind);
     }
 
     private bool IsExhausted(int openIndex, int closeIndex)
     {
-        return whitespace.HasWhitespaceBetween(openIndex, closeIndex) && tokens[openIndex].IsInsideWord();
+        return PairingRules.IsExhausted(tokens, whitespace, openIndex, closeIndex);
     }
 
     private bool CanPair(int openIndex, int closeIndex)
     {
-        if (!whitespace.HasWhitespaceBetween(openIndex, closeIndex))
-            return true;
-
-        return !tokens[openIndex].IsInsideWord() && !tokens[closeIndex].IsInsideWord();
-    }
-
-    private class OpenerStacks
-    {
-        private readonly Stack<int> emphasis = new();
-        private readonly Stack<int> strong = new();
-
-        public Stack<int> For(TokenKind kind)
-        {
-            return kind == TokenKind.Underscore ? emphasis : strong;
-        }
-
-        public void ForgetAfter(int linkOpenIndex)
-        {
-            ForgetAfter(emphasis, linkOpenIndex);
-            ForgetAfter(strong, linkOpenIndex);
-        }
-
-        private static void ForgetAfter(Stack<int> stack, int linkOpenIndex)
-        {
-            while (stack.Count > 0 && stack.Peek() > linkOpenIndex)
-                stack.Pop();
-        }
+        return PairingRules.CanPair(tokens, whitespace, openIndex, closeIndex);
     }
 }
